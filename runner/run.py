@@ -1,72 +1,59 @@
-from pde import MemoryStorage, FieldCollection, PlotTracker
+"""Запуск одного расчёта выбранной PDE-модели."""
+from pde import FieldCollection, MemoryStorage
 from pde.solvers.scipy import ScipySolverError
 
-from pde_model.volodin_2025 import Volodin2025
+from exceptions.film_vanishes_exc import FilmVanishedError
 from pde_model.shklyaev_2008 import Shklyaev2008, Shklyaev2008_VIII_B
+from pde_model.volodin_2025 import Volodin2025
+from pde_model.weaklynonlinear_2026 import WeaklyNonlinear2026
+
+# имя модели -> класс уравнения
+MODELS = {
+    'volodin_2025': Volodin2025,
+    'shklyaev_2008': Shklyaev2008,
+    'shklyaev_2008_viii_b': Shklyaev2008_VIII_B,
+    'weaklynonlinear_2026': WeaklyNonlinear2026,
+}
+
+# модели с двумя полями (h и T); у остальных только h
+MODELS_WITH_TEMPERATURE = {'volodin_2025', 'weaklynonlinear_2026'}
 
 
-def run_simulation(
-    pde_model,
-    t_range=None,
-    dt=None,
-    Ca=None,
-    G0=None,
-    b=None,
-    omega=None,
-    phi=None,
-    Ma=None,
-    Pr=None,
-    Bi=None,
-    V=None,
-    k=None,
-    bc=None,
-    initial_h=None,
-    initial_T=None,
-):
-    print(f'Running simulation for model: {pde_model}')
-    print(f'Time range: {t_range}, dt: {dt}')
-    print(
-        f'Parameters: Ca={Ca}, G0={G0}, b={b}, omega={omega}, phi={phi}, Ma={Ma}, Bi={Bi}, Pr={Pr}, V={V}, k={k}'
-    )
-    print(f'Boundary conditions: {bc}')
+def run_simulation(pde_model, initial_h, initial_T, t_range, **params):
+    """Решает уравнение и возвращает (результат, storage, is_solved).
+
+    params — параметры модели (Ca, G0, b, ...), ровно те, что лежат в params.py.
+    is_solved=False, если расчёт оборвался: плёнка исчезла или упал решатель.
+    """
+    equation = MODELS[pde_model](**params)
+
+    if pde_model in MODELS_WITH_TEMPERATURE:
+        state = FieldCollection([initial_h, initial_T])
+    else:
+        state = initial_h
+
+    print(f'Модель: {pde_model}, t_range={t_range}')
+    print(f'Параметры: {params}')
 
     storage = MemoryStorage()
-    trackers = [
-        'progress',
-        # PlotTracker(show=True),
-        storage.tracker(interrupts=1),
-    ]
-
-    print(f'PDE model={pde_model}')
-    if pde_model == 'volodin_2025':
-        eq = Volodin2025(
-            Ca=Ca, G0=G0, b=b, omega=omega, phi=phi, Ma=Ma, Bi=Bi, Pr=Pr, bc=bc
-        )
-        state = FieldCollection([initial_h, initial_T])
-    elif pde_model == 'shklyaev_2008':
-        eq = Shklyaev2008(Ca=Ca, G0=G0, b=b, omega=omega, phi=phi, bc=bc)
-        state = initial_h
-    elif pde_model == 'shklyaev_2008_viii_b':
-        eq = Shklyaev2008_VIII_B(V=V, G0=G0, k=k, omega=omega, bc=bc)
-        state = initial_h
-    else:
-        raise ValueError(f'Unknown pde_model: {pde_model}')
-
-    print('Starting solver...')
     try:
-        result = eq.solve(
+        result = equation.solve(
             state,
             t_range=t_range,
             solver='scipy',
             method='Radau',
-            tracker=trackers,
             rtol=1e-6,
             atol=1e-9,
+            tracker=['progress', storage.tracker(interrupts=1)],
         )
-    except ScipySolverError:
-        print('Solver error: stopping simulation and returning last state')
-        if len(storage.data) >= 2:
-            return storage.data[-2], storage, False
-        return state, storage, False
+    except FilmVanishedError as error:
+        print(f'Расчёт остановлен: {error!r}')
+        last_state = storage[-2] if len(storage) >= 2 else state
+        return last_state, storage, False
+
+    except ScipySolverError as error:
+        print(f'Расчёт остановлен: {error!r}')
+        last_state = storage[-2] if len(storage) >= 2 else state
+        return last_state, storage, False
 
     return result, storage, True

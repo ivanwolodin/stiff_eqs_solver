@@ -1,263 +1,159 @@
-from os import makedirs
+"""Запуск серий расчётов.
 
-# from numpy import arange
+Использование:
+    python main.py [эксперимент]
 
-from params import get_simulation_params
+Эксперименты:
+    initial        сетка по амплитуде и k начального возмущения, volodin_2025 (по умолчанию)
+    external       сетка по частоте и амплитуде внешнего воздействия, volodin_2025
+    external-fast  то же, но перебор амплитуд останавливается на первой is_solved=True
+    single         один расчёт, volodin_2025
+    weak-b         скан по k при разных амплитудах b, weaklynonlinear_2026
+    weak-omega     скан по k при разных частотах omega, weaklynonlinear_2026
+    weak-ma        скан по k при разных числах Марангони Ma, weaklynonlinear_2026
+"""
+
+import argparse
+from itertools import chain, product
+
 from initial_conditions.init_fields import prepare_initial_conditions
+from io_utils.saver import params_to_folder_name, save_results
+
+
+from params import (
+    DEFAULT_PERTURBATION_AMPLITUDE,
+    DEFAULT_WAVE_K,
+    EXTERNAL_AMPLITUDES,
+    EXTERNAL_OMEGAS,
+    INITIAL_AMPLITUDES,
+    PDE_MODEL,
+    RESULTS_DIR,
+    WAVE_K_VALUES,
+    WEAKLY_NONLINEAR_BASE_POINT,
+    WEAKLY_NONLINEAR_MODEL,
+    WEAKLY_NONLINEAR_SCANS,
+    get_simulation_params,
+)
 from runner.run import run_simulation
-from io_utils.save_txt import save_res_to_txt
-from io_utils.plotter import plot_results_to_file
-
-
-def params_to_folder_name(params: dict) -> str:
-    excluded = {'t_range', 'dt', 'bc'}
-    parts = []
-
-    for key, value in params.items():
-        if key in excluded:
-            continue
-        parts.append(f'{key}={value}')
-
-    return '_'.join(parts)
 
 
 def run_with_different_initial_conditions():
-    params = get_simulation_params(pde_model='volodin_2025')
-    # -------------------------------------------------------------
-    # Корневая папка: имя формируется ИЗ ПАРАМЕТРОВ
-    # -------------------------------------------------------------
-    params_folder = params_to_folder_name(params)
-    root_output_dir = f'results/{params_folder}'
-    makedirs(root_output_dir, exist_ok=True)
-    print(f'Root folder: {root_output_dir}')
+    """Сетка по амплитуде и волновому числу начального возмущения."""
+    params = get_simulation_params(PDE_MODEL)
+    root_dir = RESULTS_DIR / params_to_folder_name(params)
 
-    initial_amplitude_values = [0.001, 0.025, 0.005, 0.075, 0.1, 0.125, 0.150, 0.175, 0.2, 0.225,
-        # , 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09
-    ]
-    wave_k_values = [2.0, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9, 3.0, 3.1
-        # 0.5, 0.6, 0.7, 0.8, 0.9
-    ]
-
-    for initial_amplitude in initial_amplitude_values:
-        for wave_k in wave_k_values:
-
-            initial_h, initial_T = prepare_initial_conditions(
-                perturbation_amplitude=initial_amplitude,
-                wave_k=wave_k,
-            )
-
-            result, storage, is_solved = run_simulation(
-                pde_model='volodin_2025',
-                initial_h=initial_h,
-                initial_T=initial_T,
-                **params,
-            )
-            print('Simulation stopped')
-
-            # подпапка с параметрами начальных условий
-            output_dir = (
-                f'{root_output_dir}/'
-                f'k={wave_k:.2f}_a={initial_amplitude}_is_solved={is_solved}'
-            )
-            makedirs(output_dir, exist_ok=True)
-
-            save_res_to_txt(storage, output_dir, is_solved)
-            plot_results_to_file(storage, output_dir, is_solved)
+    for amplitude, wave_k in product(INITIAL_AMPLITUDES, WAVE_K_VALUES):
+        initial_h, initial_T = prepare_initial_conditions(amplitude, wave_k)
+        _, storage, is_solved = run_simulation(
+            PDE_MODEL, initial_h, initial_T, **params
+        )
+        folder = f'k={wave_k:.2f}_a={amplitude}_is_solved={is_solved}'
+        save_results(storage, root_dir / folder, is_solved)
 
 
-def run_with_different_external_freqs_and_amplitudes():
-    params = get_simulation_params(pde_model='volodin_2025')
-    amplitudes = [
-        0.0,
-        0.1,
-        0.2,
-        0.3,
-        0.4,
-        0.5,
-        0.6,
-        0.7,
-        0.8,
-        0.9,
-        1.0,
-        1.1,
-        1.2,
-        1.3,
-        1.4,
-        1.5,
-        1.6,
-        1.7,
-        1.8,
-        1.9,
-        2.0,
-        2.1,
-        2.2,
-        2.3,
-        2.4,
-        2.5,
-        2.6,
-        2.7,
-        2.8,
-        2.9,
-        3.0,
-        3.1,
-        3.2,
-        3.3,
-        3.4,
-        3.5,
-        3.6,
-        3.7,
-        3.8,
-        3.9,
-        4.0,
-    ]
-    omega_frs = [
-        0.5,
-        0.6,
-        0.7,
-        0.8,
-        0.9,
-        1.0,
-        1.1,
-        1.2,
-        1.3,
-        1.4,
-        1.5,
-        1.6,
-        1.7,
-        1.8,
-        1.9,
-        2.0,
-        2.1,
-        2.2,
-        2.3,
-        2.4,
-        2.5,
-        2.6,
-        2.7,
-        2.8,
-        2.9,
-        3.0,
-        3.1,
-        3.2,
-        3.3,
-        3.4,
-        3.5,
-        3.6,
-        3.7,
-        3.8,
-        3.9,
-        4.0,
-    ]
+def run_with_different_external_freqs_and_amplitudes(stop_at_boundary=False):
+    """Сетка по частоте omega и амплитуде b внешнего воздействия.
 
+    stop_at_boundary=True: для каждой omega перебор амплитуд прекращается на
+    первой, где is_solved=True (для больших амплитуд результат уже не меняется).
+    """
+    params = get_simulation_params(PDE_MODEL)
     initial_h, initial_T = prepare_initial_conditions(
-        perturbation_amplitude=0.01,
-        wave_k=2.0,
+        DEFAULT_PERTURBATION_AMPLITUDE, DEFAULT_WAVE_K
     )
 
-    for om in omega_frs:
-        for ampl in amplitudes:
-            params['b'] = ampl
-            params['omega'] = om
-            print(f'parameters: {params}')
+    for omega in EXTERNAL_OMEGAS:
+        print(f'\n=== omega = {omega} ===')
+        boundary_found = False
 
-            result, storage, is_solved = run_simulation(
-                pde_model='volodin_2025',
-                initial_h=initial_h,
-                initial_T=initial_T,
-                **params,
+        for amplitude in EXTERNAL_AMPLITUDES:
+            run_params = {**params, 'b': amplitude, 'omega': omega}
+            _, storage, is_solved = run_simulation(
+                PDE_MODEL, initial_h, initial_T, **run_params
             )
-            print('Simulation stopped')
+            folder = f"Ma={params['Ma']}_ampl={amplitude}_omfr={omega}_is_solved={is_solved}"
+            save_results(storage, RESULTS_DIR / folder, is_solved)
 
-            # подпапка с параметрами начальных условий
-            Maran = params['Ma']
-            root_output_dir = f'results/Ma={Maran}_ampl={ampl}_omfr={om}_is_solved={is_solved}'
-            makedirs(root_output_dir, exist_ok=True)
+            if stop_at_boundary and is_solved:
+                print(
+                    f'>>> Граница найдена: omega={omega}, b={amplitude}. Большие b пропускаем.'
+                )
+                boundary_found = True
+                break
 
-            save_res_to_txt(storage, root_output_dir, is_solved)
-            plot_results_to_file(storage, root_output_dir, is_solved)
+        if stop_at_boundary and not boundary_found:
+            print(
+                f'>>> Для omega={omega} граница не найдена (всё неустойчиво).'
+            )
 
 
 def run_single():
-    # params = get_simulation_params(pde_model='shklyaev_2008_viii_b')
-    params = get_simulation_params(pde_model='volodin_2025')
+    """Один расчёт с параметрами по умолчанию."""
+    params = get_simulation_params(PDE_MODEL)
     initial_h, initial_T = prepare_initial_conditions(
-        perturbation_amplitude=0.01,
-        wave_k=2.0,
+        DEFAULT_PERTURBATION_AMPLITUDE, DEFAULT_WAVE_K
     )
-    print(f'parameters: {params}')
-
-    # result, storage, is_solved = run_simulation(
-    #     pde_model='shklyaev_2008_viii_b',
-    #     initial_h=initial_h,
-    #     **params,
-    # )
-    result, storage, is_solved = run_simulation(
-        pde_model='volodin_2025',
-        initial_h=initial_h,
-        initial_T=initial_T,
-        **params,
+    _, storage, is_solved = run_simulation(
+        PDE_MODEL, initial_h, initial_T, **params
     )
-    print('Simulation stopped')
-
-    root_output_dir = 'results'
-    makedirs(root_output_dir, exist_ok=True)
-
-    save_res_to_txt(storage, root_output_dir, is_solved)
-    plot_results_to_file(storage, root_output_dir, is_solved)
+    save_results(storage, RESULTS_DIR, is_solved)
 
 
-def optimized_run_with_different_external_freqs_and_amplitudes():
-    params = get_simulation_params(pde_model='volodin_2025')
-    amplitudes = [round(x * 0.1, 1) for x in range(41)]  # 0.0 .. 4.0
-    omega_frs  = [round(x * 0.1, 1) for x in range(5, 41)]  # 0.5 .. 4.0
+def run_weaklynonlinear_k_range(scan):
+    """Скан по k вблизи крит. чисел. scan — какой параметр меняется вместе с k:
+    'b', 'omega' или 'Ma' (ключ WEAKLY_NONLINEAR_SCANS)."""
+    default_params = get_simulation_params(WEAKLY_NONLINEAR_MODEL)
 
-    initial_h, initial_T = prepare_initial_conditions(
-        perturbation_amplitude=0.01,
-        wave_k=2.0,
-    )
+    for scan_value, k_windows in WEAKLY_NONLINEAR_SCANS[scan].items():
+        params = {
+            **default_params,
+            **WEAKLY_NONLINEAR_BASE_POINT,
+            scan: scan_value,
+        }
 
-    for om in omega_frs:
-        print(f'\n=== omega = {om} ===')
-        boundary_found = False
-
-        for ampl in amplitudes:
-            params['b'] = ampl
-            params['omega'] = om
-            print(f'parameters: {params}')
-
-            result, storage, is_solved = run_simulation(
-                pde_model='volodin_2025',
-                initial_h=initial_h,
-                initial_T=initial_T,
-                **params,
+        for wave_k in chain.from_iterable(k_windows):
+            print(f'\n=== {scan}={scan_value}, wave_k={wave_k} ===')
+            initial_h, initial_T = prepare_initial_conditions(
+                DEFAULT_PERTURBATION_AMPLITUDE, wave_k
             )
-            print('Simulation stopped')
-
-            Maran = params['Ma']
-            root_output_dir = (
-                f'results/Ma={Maran}_ampl={ampl}_omfr={om}_is_solved={is_solved}'
+            _, storage, is_solved = run_simulation(
+                WEAKLY_NONLINEAR_MODEL, initial_h, initial_T, **params
             )
-            makedirs(root_output_dir, exist_ok=True)
-            save_res_to_txt(storage, root_output_dir, is_solved)
-            plot_results_to_file(storage, root_output_dir, is_solved)
+            folder = (
+                f"wave_k={wave_k}_ext_amplitude={params['b']}_"
+                f"Ma={params['Ma']}_Omega={params['omega']}_is_solved={is_solved}"
+            )
+            save_results(
+                storage,
+                RESULTS_DIR / WEAKLY_NONLINEAR_MODEL / folder,
+                is_solved,
+            )
 
-            if is_solved:
-                print(
-                    f'>>> Граница устойчивости найдена: om={om}, ampl={ampl}. '
-                    f'Пропускаем большие амплитуды.'
-                )
-                boundary_found = True
-                break  # дальше по амплитуде всё будет True — незачем считать
 
-        if not boundary_found:
-            print(f'>>> Для om={om} граница не найдена (всё неустойчиво).')
+EXPERIMENTS = {
+    'initial': run_with_different_initial_conditions,
+    'external': run_with_different_external_freqs_and_amplitudes,
+    'external-fast': lambda: run_with_different_external_freqs_and_amplitudes(
+        stop_at_boundary=True
+    ),
+    'single': run_single,
+    'weak-b': lambda: run_weaklynonlinear_k_range('b'),
+    'weak-omega': lambda: run_weaklynonlinear_k_range('omega'),
+    'weak-ma': lambda: run_weaklynonlinear_k_range('Ma'),
+}
 
 
 def main():
-    # optimized_run_with_different_external_freqs_and_amplitudes()
-    run_with_different_initial_conditions()
-    # run_with_different_external_freqs_and_amplitudes()
-    # run_single()
+    parser = argparse.ArgumentParser(description='Серии численных расчётов')
+    parser.add_argument(
+        'experiment',
+        nargs='?',
+        default='initial',
+        choices=EXPERIMENTS,
+        help='какой эксперимент запустить (по умолчанию: initial)',
+    )
+    args = parser.parse_args()
+    EXPERIMENTS[args.experiment]()
 
 
 if __name__ == '__main__':

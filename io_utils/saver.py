@@ -1,3 +1,5 @@
+from io_utils.plotter import plot_results_to_file
+
 from os import makedirs
 from numpy import savetxt
 
@@ -34,3 +36,19 @@ def save_res_to_txt(storage, output_dir=None, is_solved=None):
             f.write('unknown')
 
     print(f'Статус записан в {status_path}')
+
+
+def params_to_folder_name(params):
+    """Имя папки из параметров расчёта (t_range и bc в имя не попадают)."""
+    return '_'.join(
+        f'{key}={value}'
+        for key, value in params.items()
+        if key not in ('t_range', 'bc')
+    )
+
+
+def save_results(storage, output_dir, is_solved):
+    """Создаёт папку и сохраняет в неё данные и графики."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    save_res_to_txt(storage, str(output_dir), is_solved)
+    plot_results_to_file(storage, str(output_dir), is_solved)

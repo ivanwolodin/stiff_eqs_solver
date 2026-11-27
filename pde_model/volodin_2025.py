@@ -1,8 +1,18 @@
+import numpy as np
+
 from pde import PDEBase, FieldCollection
 from numpy import sqrt, tan, real, sin, sinh, cos, cosh
 
+from pde.solvers.scipy import ScipySolverError
+from exceptions.film_vanishes_exc import FilmVanishedError
+
 
 class Volodin2025(PDEBase):
+    """Solution to the averaged PDE system of two papers:
+    https://doi.org/10.1007/s12217-026-10289-6
+    https://doi.org/10.1007/s12217-025-10201-8
+    """
+
     def __init__(self, Ca, G0, b, omega, phi, Ma, Bi, Pr, bc):
         super().__init__()
         self.Ca = Ca
@@ -18,6 +28,14 @@ class Volodin2025(PDEBase):
 
     def evolution_rate(self, state, t=0):
         h, T = state
+
+        if np.any(np.isnan(T.data)) or np.any(np.isinf(T.data)):
+            raise ScipySolverError(f'NaN/Inf in T at t={t}')
+        if np.any(np.isnan(h.data)) or np.any(np.isinf(h.data)):
+            raise ScipySolverError(f'NaN/Inf in h at t={t}')
+        if np.any(h.data <= 1e-6):
+            raise FilmVanishedError(f'Film vanished at t={t}')
+
         f = T - h
         # https://py-pde.readthedocs.io/en/latest/examples_gallery/advanced_pdes/pde_1d_class.html
         # on gradient() operator
